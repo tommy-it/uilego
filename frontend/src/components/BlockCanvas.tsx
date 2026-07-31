@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button, Select, Space, message, Modal, Form, Input, InputNumber } from 'antd';
-import { SaveOutlined, CodeOutlined, PlusOutlined, DeleteOutlined, ClearOutlined } from '@ant-design/icons';
+import { SaveOutlined, CodeOutlined, PlusOutlined, DeleteOutlined, ClearOutlined, PlayCircleOutlined, LeftOutlined } from '@ant-design/icons';
 import { useStore } from '../stores/useStore';
 import ActionNode from './ActionNode';
 import ExecutionPanel from './ExecutionPanel';
@@ -48,6 +48,7 @@ const BlockCanvas: React.FC = () => {
   const [addAction, setAddAction] = useState<ActionType>('tap');
   const [configModal, setConfigModal] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [showExecPanel, setShowExecPanel] = useState(false);
   const [form] = Form.useForm();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -80,6 +81,7 @@ const BlockCanvas: React.FC = () => {
           target_element_id: step.target_element_id,
           target_element_name: displayName,
           params: step.params || {},
+          step_index: idx + 1,
         },
       };
     });
@@ -115,6 +117,7 @@ const BlockCanvas: React.FC = () => {
         target_element_id: null,
         target_element_name: '',
         params: {},
+        step_index: nodes.length + 1,
       },
     };
     setNodes((nds) => [...nds, newNode]);
@@ -176,16 +179,40 @@ const BlockCanvas: React.FC = () => {
     }
     // 检查是否有缺失元素
     const needsElementActions = ['tap', 'long_press', 'swipe', 'input_text', 'clear_input', 'assert_exists', 'assert_text'];
-    const missingSteps = nodes.filter(n => {
+    const missingSteps: string[] = [];
+    nodes.forEach((n, idx) => {
       const actionType = n.data.action_type as string;
-      if (!needsElementActions.includes(actionType)) return false;
+      if (!needsElementActions.includes(actionType)) return;
       const elId = n.data.target_element_id as number | null;
-      if (!elId) return true; // 未选择元素
-      return !elements.some(e => e.id === elId); // 元素已删除
+      const elName = n.data.target_element_name as string;
+      const label = n.data.label as string;
+      if (!elId) {
+        missingSteps.push(`第${idx + 1}步 [${label}] 未选择元素`);
+      } else if (!elements.some(e => e.id === elId)) {
+        missingSteps.push(`第${idx + 1}步 [${label}] 元素(ID:${elId})已删除`);
+      }
     });
     if (missingSteps.length > 0) {
-      const names = missingSteps.map(n => n.data.label as string).join(', ');
-      message.error(`以下步骤缺少元素，请双击补充完整后再保存: ${names}`);
+      const MAX_SHOW = 8;
+      const shown = missingSteps.slice(0, MAX_SHOW);
+      const rest = missingSteps.length - MAX_SHOW;
+      Modal.warning({
+        title: `缺少 ${missingSteps.length} 个元素，请补充后再保存`,
+        content: (
+          <div style={{ marginTop: 8 }}>
+            {shown.map((s, i) => (
+              <div key={i} style={{ padding: '3px 0', fontSize: 13 }}>
+                <span style={{ color: '#ff4d4f' }}>●</span> {s}
+              </div>
+            ))}
+            {rest > 0 && (
+              <div style={{ padding: '3px 0', fontSize: 12, color: '#999' }}>
+                … 还有 {rest} 个步骤缺少元素
+              </div>
+            )}
+          </div>
+        ),
+      });
       return;
     }
     const steps = nodes.map((n, idx) => ({
@@ -213,7 +240,14 @@ const BlockCanvas: React.FC = () => {
       message.warning('请先点击选中一个积木');
       return;
     }
-    setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+    setNodes((nds) => {
+      const filtered = nds.filter((n) => n.id !== selectedNodeId);
+      // 重新编号
+      return filtered.map((n, idx) => ({
+        ...n,
+        data: { ...n.data, step_index: idx + 1 },
+      }));
+    });
     setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
     setSelectedNodeId(null);
     message.success('积木已删除');
@@ -281,8 +315,33 @@ const BlockCanvas: React.FC = () => {
         </span>
       </div>
 
-      {/* ReactFlow 画布 */}
-      <div className="block-flow" ref={reactFlowWrapper}>
+      {/* ReactFlow 画布 + 浮动执行面板 */}
+      <div className="block-flow" ref={reactFlowWrapper} style={{ position: 'relative' }}>
+        {/* 左侧执行面板切换按钮 */}
+        {!showExecPanel && (
+          <button
+            className="exec-toggle-btn"
+            onClick={() => setShowExecPanel(true)}
+            title="打开执行面板"
+          >
+            <PlayCircleOutlined style={{ fontSize: 16 }} />
+            <span>执行</span>
+          </button>
+        )}
+
+        {/* 浮动执行面板 */}
+        {showExecPanel && (
+          <div className="exec-drawer">
+            <button
+              className="exec-drawer-close"
+              onClick={() => setShowExecPanel(false)}
+              title="收起"
+            >
+              <LeftOutlined />
+            </button>
+            <ExecutionPanel testcaseId={currentTestCase?.id ?? null} />
+          </div>
+        )}
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -315,9 +374,6 @@ const BlockCanvas: React.FC = () => {
           <pre className="script-code">{generatedScript}</pre>
         </div>
       )}
-
-      {/* 实时执行面板 */}
-      <ExecutionPanel testcaseId={currentTestCase?.id ?? null} />
 
       {/* 步骤配置弹窗 */}
       <Modal

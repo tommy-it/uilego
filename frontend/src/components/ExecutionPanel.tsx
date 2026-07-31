@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, Tag, Space, Typography, Progress, Segmented, Tooltip } from 'antd';
+import { Tag, Space, Typography, Progress } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -122,85 +122,76 @@ const ExecutionPanel: React.FC<Props> = ({ testcaseId }) => {
   const statusTag = () => {
     switch (status) {
       case 'running':
-        return <Tag icon={<LoadingOutlined />} color="processing">执行中</Tag>;
+        return <Tag icon={<LoadingOutlined />} color="processing" style={{ background: '#111b26', border: '1px solid #153450', color: '#4096ff' }}>执行中</Tag>;
       case 'passed':
-        return <Tag icon={<CheckCircleOutlined />} color="success">通过</Tag>;
+        return <Tag icon={<CheckCircleOutlined />} color="success" style={{ background: '#162312', border: '1px solid #274916', color: '#73d13d' }}>通过</Tag>;
       case 'failed':
-        return <Tag icon={<CloseCircleOutlined />} color="error">失败</Tag>;
+        return <Tag icon={<CloseCircleOutlined />} color="error" style={{ background: '#2a1215', border: '1px solid #58181c', color: '#ff7875' }}>失败</Tag>;
       default:
-        return <Tag color="default">待执行</Tag>;
+        return <Tag style={{ background: '#303030', border: '1px solid #424242', color: '#aaa' }}>待执行</Tag>;
     }
   };
 
   return (
-    <div className="execution-panel">
-      <div className="execution-header">
+    <div className="execution-panel expanded">
+      {/* 头部：标题 + 状态 */}
+      <div className="execution-header" style={{ cursor: 'default' }}>
         <Space>
-          <Text strong>🧪 实时执行</Text>
+          <Text strong style={{ fontSize: 14 }}>🧪 实时执行</Text>
           {statusTag()}
-          {result && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              通过 {result.passed} / 失败 {result.failed} / 错误 {result.error} · {result.duration.toFixed(2)}s
-            </Text>
-          )}
-        </Space>
-        <Space>
-          <Segmented
-            size="small"
-            value={execMode}
-            onChange={(v) => setExecMode(v as string)}
-            options={[
-              {
-                label: (
-                  <Tooltip title="⚡ 跳过 Appium，直接 ADB 执行，速度快 5-10 倍">
-                    <span><ThunderboltOutlined /> ADB 直连</span>
-                  </Tooltip>
-                ),
-                value: 'adb',
-              },
-              {
-                label: (
-                  <Tooltip title="完整 Appium 执行，支持更多操作类型">
-                    <span><ApiOutlined /> Appium</span>
-                  </Tooltip>
-                ),
-                value: 'appium',
-              },
-            ]}
-          />
-          <Button
-            size="small"
-            icon={<ClearOutlined />}
-            onClick={() => { setLogs([]); setResult(null); setStatus('idle'); }}
-          >
-            清空
-          </Button>
-          {status === 'running' ? (
-            <Button size="small" danger icon={<StopOutlined />} onClick={stopRun}>
-              停止
-            </Button>
-          ) : (
-            <Button
-              size="small"
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              onClick={startRun}
-              disabled={!canRun}
-            >
-              运行
-            </Button>
-          )}
         </Space>
       </div>
 
-      {/* 结果统计条 */}
+      {/* 控制栏 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: '#1f1f3a', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="exec-mode-switch">
+          <button
+            className={`exec-mode-btn ${execMode === 'adb' ? 'active' : ''}`}
+            onClick={() => setExecMode('adb')}
+          >
+            <ThunderboltOutlined /> ADB 直连
+          </button>
+          <button
+            className={`exec-mode-btn ${execMode === 'appium' ? 'active' : ''}`}
+            onClick={() => setExecMode('appium')}
+          >
+            <ApiOutlined /> Appium
+          </button>
+        </div>
+        <div style={{ flex: 1 }} />
+        <button className="exec-ctrl-btn" onClick={() => { setLogs([]); setResult(null); setStatus('idle'); }}>
+          <ClearOutlined /> 清空
+        </button>
+        {status === 'running' ? (
+          <button className="exec-ctrl-btn danger" onClick={stopRun}>
+            <StopOutlined /> 停止
+          </button>
+        ) : (
+          <button
+            className="exec-ctrl-btn primary"
+            onClick={startRun}
+            disabled={!canRun}
+          >
+            <PlayCircleOutlined /> 运行
+          </button>
+        )}
+      </div>
+
+      {/* 结果统计 */}
       {result && (
         <div className="execution-summary">
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ color: '#52c41a', fontSize: 12 }}>✓ {result.passed} 通过</span>
+            <span style={{ color: '#ff4d4f', fontSize: 12 }}>✗ {result.failed} 失败</span>
+            <span style={{ color: '#faad14', fontSize: 12 }}>⚠ {result.error} 错误</span>
+            <span style={{ color: '#999', fontSize: 12 }}>{result.duration.toFixed(2)}s</span>
+          </div>
           <Progress
             percent={result.return_code === 0 ? 100 : Math.round((result.passed / Math.max(1, result.passed + result.failed + result.error)) * 100)}
             status={result.return_code === 0 ? 'success' : 'exception'}
             size="small"
             strokeColor={result.return_code === 0 ? '#52c41a' : '#ff4d4f'}
+            showInfo={false}
           />
         </div>
       )}

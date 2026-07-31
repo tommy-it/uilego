@@ -3,7 +3,23 @@
   flex-direction: column;
   border-top: 1px solid #f0f0f0;
   background: #1e1e1e;
-  max-height: 280px;
+}
+
+.execution-panel.collapsed {
+  max-height: 40px;
+}
+
+.execution-panel.expanded {
+  flex: 1;
+}
+
+.exec-drawer .execution-panel {
+  border-top: none;
+  height: 100%;
+}
+
+.exec-drawer .execution-panel.expanded {
+  max-height: none;
 }
 
 .execution-header {
@@ -13,6 +29,8 @@
   padding: 6px 16px;
   background: #252526;
   border-bottom: 1px solid #333;
+  cursor: pointer;
+  user-select: none;
 }
 
 .execution-header .ant-typography {
@@ -20,8 +38,8 @@
 }
 
 .execution-summary {
-  padding: 4px 16px;
-  background: #252526;
+  padding: 8px 16px;
+  background: #1f1f3a;
 }
 
 .execution-logs {
@@ -32,7 +50,96 @@
   font-size: 12px;
   line-height: 1.7;
   min-height: 100px;
-  max-height: 200px;
+}
+
+.exec-drawer .execution-logs {
+  max-height: none;
+}
+
+/* 模式切换按钮 */
+.exec-mode-switch {
+  display: flex;
+  background: #0d0d1a;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.exec-mode-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255,255,255,0.45);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.exec-mode-btn:hover {
+  color: rgba(255,255,255,0.7);
+}
+
+.exec-mode-btn.active {
+  background: #1890ff;
+  color: #fff;
+  font-weight: 500;
+}
+
+/* 控制按钮 */
+.exec-ctrl-btn {
+  padding: 4px 12px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255,255,255,0.65);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.exec-ctrl-btn:hover {
+  border-color: rgba(255,255,255,0.35);
+  color: #fff;
+}
+
+.exec-ctrl-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.exec-ctrl-btn.primary {
+  background: #1890ff;
+  border-color: #1890ff;
+  color: #fff;
+  font-weight: 500;
+}
+
+.exec-ctrl-btn.primary:hover {
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
+.exec-ctrl-btn.primary:disabled {
+  background: #333;
+  border-color: #333;
+  color: rgba(255,255,255,0.25);
+  cursor: not-allowed;
+}
+
+.exec-ctrl-btn.danger {
+  border-color: #58181c;
+  color: #ff7875;
+}
+
+.exec-ctrl-btn.danger:hover {
+  background: #2a1215;
+  border-color: #a61d24;
 }
 
 .execution-empty {

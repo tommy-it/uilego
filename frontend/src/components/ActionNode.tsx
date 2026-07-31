@@ -18,6 +18,7 @@ const ActionNode: React.FC<NodeProps> = ({ data }) => {
   const actionType = (data.action_type as string) || 'tap';
   const color = actionColors[actionType] || '#1890ff';
   const targetName = (data.target_element_name as string) || '';
+  const stepIndex = data.step_index as number | undefined;
   const elementMissing = data.target_element_id && !targetName;
 
   return (
@@ -26,8 +27,20 @@ const ActionNode: React.FC<NodeProps> = ({ data }) => {
       style={{ borderLeftColor: color, ...(elementMissing ? { borderColor: '#ff4d4f', boxShadow: '0 0 6px rgba(255,77,79,0.3)' } : {}) }}
     >
       <Handle type="target" position={Position.Top} />
-      <div className="action-node-header" style={{ background: color }}>
-        {data.label as string}
+      <div className="action-node-header" style={{ background: color, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {stepIndex != null && (
+          <span style={{
+            background: 'rgba(255,255,255,0.25)',
+            borderRadius: 3,
+            padding: '0 5px',
+            fontSize: 11,
+            fontWeight: 600,
+            lineHeight: '18px',
+          }}>
+            {stepIndex}
+          </span>
+        )}
+        <span style={{ flex: 1 }}>{data.label as string}</span>
       </div>
       <div className="action-node-body">
         {elementMissing ? (
