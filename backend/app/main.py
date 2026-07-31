@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, inspect
 from .database import engine, Base
-from .routers import projects, pages, elements, testcases
+from .routers import projects, pages, elements, testcases, executions
 
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
@@ -63,6 +63,7 @@ app.include_router(projects.router)
 app.include_router(pages.router)
 app.include_router(elements.router)
 app.include_router(testcases.router)
+app.include_router(executions.router)
 
 
 @app.get("/api/health")

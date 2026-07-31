@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
@@ -201,6 +202,10 @@ class ADBExecutor:
         """返回"""
         return await self._run(["shell", "input", "keyevent", "KEYCODE_BACK"])
 
+    async def press_home(self) -> Tuple[str, int]:
+        """按 HOME 键回到桌面"""
+        return await self._run(["shell", "input", "keyevent", "KEYCODE_HOME"])
+
     async def screenshot(self, local_path: str) -> Tuple[str, int]:
         """截图"""
         remote = "/sdcard/screen.png"
@@ -209,9 +214,17 @@ class ADBExecutor:
 
     async def get_current_app(self) -> Tuple[str, str]:
         """获取当前前台 App 的包名和 Activity"""
+        # 优先用 dumpsys activity activities（兼容新版 Android）
+        output, _ = await self._run(["shell", "dumpsys", "activity", "activities"])
+        for line in output.split("\n"):
+            if "ResumedActivity" in line or "topResumedActivity" in line:
+                m = re.search(r'([a-zA-Z][\w.]*)/([a-zA-Z][\w.$]*)', line)
+                if m:
+                    return m.group(1), m.group(2)
+        # fallback 旧版方式
         output, _ = await self._run(["shell", "dumpsys", "window", "windows"])
         for line in output.split("\n"):
-            if "mCurrentFocus" in line:
+            if "mCurrentFocus" in line or "mFocusedApp" in line:
                 m = re.search(r'([a-zA-Z][\w.]*)/([a-zA-Z][\w.$]*)', line)
                 if m:
                     return m.group(1), m.group(2)
@@ -224,21 +237,43 @@ class ADBExecutor:
             "-W",  # 等待启动完成
         ])
 
+    async def force_stop_app(self, package: str) -> Tuple[str, int]:
+        """强制停止应用"""
+        return await self._run(["shell", "am", "force-stop", package])
+
 
 # ============ 批量步骤执行器 ============
+
+# 截图存储目录
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 async def run_steps_via_adb(
     steps: List[dict],
     element_map: Dict[int, dict],
     websocket,
     device_id: str = None,
+    capture_replay: bool = False,
+    db_session=None,
+    source_type: str = "testcase",
+    source_id: int = 0,
+    source_name: str = "",
+    project_id: int = 0,
+    exec_mode: str = "adb",
+    app_package: str = "",
+    app_activity: str = "",
 ) -> dict:
     """
     通过 ADB 直连执行步骤列表（不经过 Appium）
 
     steps: [{"action_type": "tap", "target_element_id": 1, "params": {}}, ...]
     element_map: {1: {"name": "按钮", "locators": [{"type": "text", "value": "登录"}]}}
+    capture_replay: 是否每步截图用于回放
+    db_session: SQLAlchemy Session，用于存储执行记录
     """
+    from ..models import ExecutionRecord, ExecutionStepRecord
+
     adb = ADBExecutor(device_id=device_id)
     result = {"passed": 0, "failed": 0, "error": 0, "duration": 0, "logs": []}
     start_time = datetime.now()
@@ -252,7 +287,64 @@ async def run_steps_via_adb(
 
     await log("system", "⚡ ADB 直连模式 - 跳过 Appium，直接执行")
     await log("system", f"📱 设备: {device_id or '默认设备'}")
+
+    # 自动杀掉应用再重新启动，确保从 App 首页开始
+    if app_package and app_activity:
+        await log("system", f"🔄 重启应用: {app_package}")
+        try:
+            # 1. 先按 HOME 键回到桌面，避免其他 App 遮挡
+            await adb.press_home()
+            await asyncio.sleep(0.5)
+
+            # 2. 杀掉目标应用
+            await adb.force_stop_app(app_package)
+            await asyncio.sleep(0.5)
+
+            # 3. 重新启动应用
+            output, rc = await adb.start_app(app_package, app_activity)
+            # 检查输出中是否有错误关键字（am start 有时 rc=0 但实际失败）
+            output_lower = output.lower()
+            if rc != 0 or "error" in output_lower or "does not exist" in output_lower or "not found" in output_lower:
+                await log("error", f"  ❌ 启动应用失败: {output}")
+                await log("error", f"  💡 请检查应用包名({app_package})和 Activity({app_activity})是否正确，以及 App 是否已安装")
+            else:
+                # 4. 验证应用是否真的在前台
+                await asyncio.sleep(2)
+                current_pkg, current_act = await adb.get_current_app()
+                if app_package in current_pkg:
+                    await log("success", "  ✓ 应用已重启，从首页开始执行")
+                    await asyncio.sleep(1)  # 再等一下确保完全加载
+                else:
+                    # 检查 App 是否已安装
+                    check_output, check_rc = await adb._run(["shell", "pm", "list", "packages", app_package])
+                    is_installed = app_package in (check_output or "")
+                    if not is_installed:
+                        await log("error", f"  ❌ 应用未安装: {app_package}")
+                        await log("error", f"  💡 请从 Play Store 重新安装该应用")
+                    else:
+                        await log("warning", f"  ⚠ 应用已启动但前台为: {current_pkg or '无'}")
+                        await log("info", "  ℹ️ 尝试继续执行，如元素找不到请检查 App 页面状态")
+        except Exception as e:
+            await log("warning", f"  ⚠ 重启应用异常: {str(e)}")
+
     await log("system", "─" * 50)
+
+    # 创建执行记录
+    execution_record = None
+    if db_session and capture_replay:
+        execution_record = ExecutionRecord(
+            source_type=source_type,
+            source_id=source_id,
+            source_name=source_name,
+            project_id=project_id,
+            status="running",
+            total_steps=len(steps),
+            exec_mode=exec_mode,
+            device_id=device_id or "",
+        )
+        db_session.add(execution_record)
+        db_session.commit()
+        db_session.refresh(execution_record)
 
     # 预检查：验证所有元素都存在
     needs_element_actions = ["tap", "long_press", "swipe", "input_text", "clear_input", "assert_exists", "assert_text"]
@@ -287,8 +379,16 @@ async def run_steps_via_adb(
         el_id = step.get("target_element_id")
         el_data = element_map.get(el_id) if el_id else None
         el_name = el_data.get("name", "未命名") if el_data else "无元素"
+        step_start = datetime.now()
+        step_logs: List[str] = []
+        step_status = "passed"
 
-        await log("info", f"\n▶ Step {i + 1}: {action} [{el_name}]")
+        # 收集该步骤的日志
+        async def step_log(level: str, msg: str):
+            step_logs.append(msg)
+            await log(level, msg)
+
+        await step_log("info", f"\n▶ Step {i + 1}: {action} [{el_name}]")
 
         try:
             if action == "tap":
@@ -296,32 +396,43 @@ async def run_steps_via_adb(
                 if coord:
                     x, y = coord
                     output, rc = await adb.tap(x, y)
-                    await log("success" if rc == 0 else "error",
+                    await step_log("success" if rc == 0 else "error",
                               f"  点击 ({x}, {y}) {'✓' if rc == 0 else '✗'}")
+                    if rc != 0:
+                        step_status = "failed"
                 else:
-                    await log("error", f"  ❌ 找不到元素 [{el_name}]")
+                    await step_log("error", f"  ❌ 找不到元素 [{el_name}]")
+                    step_status = "failed"
                     result["failed"] += 1
+                    # 截图 + 记录后 continue
+                    await _save_step_record(adb, execution_record, db_session, i, action, el_name, el_id, params, step_status, step_logs, step_start, websocket, capture_replay)
                     continue
 
             elif action == "long_press":
                 coord = await _resolve_element(adb, el_data)
                 if coord:
                     x, y = coord
-                    duration = int(params.get("duration", 2) * 1000)
-                    output, rc = await adb.long_press(x, y, duration)
-                    await log("success" if rc == 0 else "error",
-                              f"  长按 ({x}, {y}) {duration}ms")
+                    duration_ms = int(params.get("duration", 2) * 1000)
+                    output, rc = await adb.long_press(x, y, duration_ms)
+                    await step_log("success" if rc == 0 else "error",
+                              f"  长按 ({x}, {y}) {duration_ms}ms")
+                    if rc != 0:
+                        step_status = "failed"
                 else:
-                    await log("error", f"  ❌ 找不到元素 [{el_name}]")
+                    await step_log("error", f"  ❌ 找不到元素 [{el_name}]")
+                    step_status = "failed"
                     result["failed"] += 1
+                    await _save_step_record(adb, execution_record, db_session, i, action, el_name, el_id, params, step_status, step_logs, step_start, websocket, capture_replay)
                     continue
 
             elif action == "swipe":
                 direction = params.get("direction", "up")
                 distance = params.get("distance", 0.5)
                 output, rc = await adb.swipe(direction, distance)
-                await log("success" if rc == 0 else "error",
+                await step_log("success" if rc == 0 else "error",
                           f"  滑动 {direction} (距离 {distance})")
+                if rc != 0:
+                    step_status = "failed"
 
             elif action == "input_text":
                 # 先点击输入框
@@ -333,22 +444,28 @@ async def run_steps_via_adb(
 
                 text = params.get("text", "")
                 output, rc = await adb.input_text(text)
-                await log("success" if rc == 0 else "error",
+                await step_log("success" if rc == 0 else "error",
                           f"  输入: \"{text}\"")
+                if rc != 0:
+                    step_status = "failed"
 
             elif action == "clear_input":
                 output, rc = await adb.clear_text()
-                await log("success" if rc == 0 else "error", "  清空输入")
+                await step_log("success" if rc == 0 else "error", "  清空输入")
+                if rc != 0:
+                    step_status = "failed"
 
             elif action == "assert_exists":
                 root = await adb.dump_ui(force=True)
                 if el_data:
                     found = adb.find_element_multi(root, el_data.get("locators", []))
                     if found:
-                        await log("success", f"  ✓ 元素存在 [{el_name}]")
+                        await step_log("success", f"  ✓ 元素存在 [{el_name}]")
                     else:
-                        await log("error", f"  ✗ 元素不存在 [{el_name}]")
+                        await step_log("error", f"  ✗ 元素不存在 [{el_name}]")
+                        step_status = "failed"
                         result["failed"] += 1
+                        await _save_step_record(adb, execution_record, db_session, i, action, el_name, el_id, params, step_status, step_logs, step_start, websocket, capture_replay)
                         continue
 
             elif action == "assert_text":
@@ -362,34 +479,42 @@ async def run_steps_via_adb(
                             found_text = True
                             break
                 if found_text:
-                    await log("success", f"  ✓ 找到文本: \"{expected}\"")
+                    await step_log("success", f"  ✓ 找到文本: \"{expected}\"")
                 else:
-                    await log("error", f"  ✗ 未找到文本: \"{expected}\"")
+                    await step_log("error", f"  ✗ 未找到文本: \"{expected}\"")
+                    step_status = "failed"
                     result["failed"] += 1
+                    await _save_step_record(adb, execution_record, db_session, i, action, el_name, el_id, params, step_status, step_logs, step_start, websocket, capture_replay)
                     continue
 
             elif action == "wait":
                 timeout = params.get("timeout", 3)
                 await asyncio.sleep(timeout)
-                await log("info", f"  等待 {timeout}s")
+                await step_log("info", f"  等待 {timeout}s")
 
             elif action == "screenshot":
                 path = os.path.join(tempfile.gettempdir(), f"step_{i + 1}.png")
                 await adb.screenshot(path)
-                await log("info", f"  📷 截图: {path}")
+                await step_log("info", f"  📷 截图: {path}")
 
             elif action == "back":
                 output, rc = await adb.back()
-                await log("success" if rc == 0 else "error", "  ← 返回")
+                await step_log("success" if rc == 0 else "error", "  ← 返回")
+                if rc != 0:
+                    step_status = "failed"
 
             else:
-                await log("warning", f"  ⚠️ 不支持的操作: {action}")
+                await step_log("warning", f"  ⚠️ 不支持的操作: {action}")
 
             result["passed"] += 1
 
         except Exception as e:
-            await log("error", f"  ❌ 异常: {str(e)}")
+            await step_log("error", f"  ❌ 异常: {str(e)}")
+            step_status = "error"
             result["error"] += 1
+
+        # 截图 + 存储步骤记录
+        await _save_step_record(adb, execution_record, db_session, i, action, el_name, el_id, params, step_status, step_logs, step_start, websocket, capture_replay)
 
         # 步骤间隔
         await asyncio.sleep(0.3)
@@ -406,6 +531,15 @@ async def run_steps_via_adb(
                   f"❌ 通过: {result['passed']} | 失败: {result['failed']} | "
                   f"错误: {result['error']} | 耗时: {result['duration']:.1f}s")
 
+    # 更新执行记录
+    if execution_record and db_session:
+        execution_record.status = "passed" if result["failed"] == 0 and result["error"] == 0 else "failed"
+        execution_record.passed_count = result["passed"]
+        execution_record.failed_count = result["failed"]
+        execution_record.error_count = result["error"]
+        execution_record.duration = result["duration"]
+        db_session.commit()
+
     # 发送 done 状态
     try:
         await websocket.send_json({"level": "done", "message": json.dumps({
@@ -414,11 +548,77 @@ async def run_steps_via_adb(
             "failed": result["failed"],
             "error": result["error"],
             "duration": result["duration"],
+            "execution_id": execution_record.id if execution_record else None,
         })})
     except Exception:
         pass
 
     return result
+
+
+async def _save_step_record(
+    adb: ADBExecutor,
+    execution_record,
+    db_session,
+    step_index: int,
+    action: str,
+    el_name: str,
+    el_id: Optional[int],
+    params: dict,
+    step_status: str,
+    step_logs: List[str],
+    step_start: datetime,
+    websocket,
+    capture_replay: bool,
+):
+    """截图并存储步骤执行记录"""
+    from ..models import ExecutionStepRecord
+
+    if not execution_record or not db_session or not capture_replay:
+        return
+
+    step_duration = (datetime.now() - step_start).total_seconds()
+    screenshot_path = None
+
+    # 等待 UI 稳定后截图
+    await asyncio.sleep(0.3)
+    try:
+        filename = f"replay_{uuid.uuid4().hex[:12]}_{step_index + 1}.png"
+        local_path = os.path.join(UPLOAD_DIR, filename)
+        await adb.screenshot(local_path)
+        screenshot_path = local_path
+
+        # 推送截图 URL 给前端
+        try:
+            await websocket.send_json({
+                "level": "screenshot",
+                "message": f"/uploads/{filename}",
+                "ts": datetime.now().isoformat(),
+                "step": step_index + 1,
+            })
+        except Exception:
+            pass
+    except Exception:
+        screenshot_path = None  # 截图失败不影响主流程
+
+    # 写入步骤记录
+    try:
+        step_record = ExecutionStepRecord(
+            execution_id=execution_record.id,
+            step_order=step_index + 1,
+            action_type=action,
+            element_name=el_name,
+            element_id=el_id,
+            params_json=json.dumps(params, ensure_ascii=False),
+            status=step_status,
+            log_message="\n".join(step_logs),
+            screenshot_path=screenshot_path,
+            duration=step_duration,
+        )
+        db_session.add(step_record)
+        db_session.commit()
+    except Exception:
+        pass
 
 
 def _parse_coordinate_value(val) -> Tuple[int, int]:
@@ -443,8 +643,8 @@ def _parse_coordinate_value(val) -> Tuple[int, int]:
     raise ValueError(f"无法解析坐标: {val}")
 
 
-async def _resolve_element(adb: ADBExecutor, el_data: Optional[dict]) -> Optional[Tuple[int, int]]:
-    """解析元素坐标"""
+async def _resolve_element(adb: ADBExecutor, el_data: Optional[dict], retry: bool = True, max_scrolls: int = 3) -> Optional[Tuple[int, int]]:
+    """解析元素坐标，查找失败时自动重试并滚动查找"""
     if not el_data:
         return None
 
@@ -458,11 +658,46 @@ async def _resolve_element(adb: ADBExecutor, el_data: Optional[dict]) -> Optiona
             except ValueError:
                 continue
 
-    # 通过 uiautomator dump 查找
+    # 第一次查找
     root = await adb.dump_ui()
     if root:
         found = adb.find_element_multi(root, locators)
         if found and "center" in found:
             return found["center"]
+
+    # 第一次没找到，等待后强制刷新 UI dump 重试
+    if retry:
+        await asyncio.sleep(1.0)
+        root = await adb.dump_ui(force=True)
+        if root:
+            found = adb.find_element_multi(root, locators)
+            if found and "center" in found:
+                return found["center"]
+
+    # 还是没找到，尝试滚动查找（先向下再向上）
+    if retry and max_scrolls > 0:
+        # 向下滚动查找
+        for i in range(max_scrolls):
+            await adb.swipe("up", 0.5)  # 向上滑动 = 内容向下滚动
+            await asyncio.sleep(0.8)
+            root = await adb.dump_ui(force=True)
+            if root:
+                found = adb.find_element_multi(root, locators)
+                if found and "center" in found:
+                    return found["center"]
+
+        # 向下没找到，回滚到顶部再试
+        for i in range(max_scrolls + 2):  # 多滚几次确保回到顶部
+            await adb.swipe("down", 0.5)
+            await asyncio.sleep(0.3)
+        # 最后再尝试向下滚动查找
+        for i in range(2):
+            await adb.swipe("up", 0.5)
+            await asyncio.sleep(0.8)
+            root = await adb.dump_ui(force=True)
+            if root:
+                found = adb.find_element_multi(root, locators)
+                if found and "center" in found:
+                    return found["center"]
 
     return None

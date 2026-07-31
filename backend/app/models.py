@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -161,3 +161,55 @@ class TestCasePage(Base):
 
     testcase = relationship("TestCase", back_populates="page_refs")
     page = relationship("Page")
+
+
+class ExecutionRecord(Base):
+    """执行记录 — 一次运行一条记录"""
+    __tablename__ = "execution_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String(20), nullable=False)       # "testcase" | "page"
+    source_id = Column(Integer, nullable=False)
+    source_name = Column(String(200), default="")
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    status = Column(String(20), default="running")          # running/passed/failed/error/aborted
+    total_steps = Column(Integer, default=0)
+    passed_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    duration = Column(Float, default=0.0)
+    exec_mode = Column(String(20), default="adb")
+    device_id = Column(String(200), default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    step_records = relationship("ExecutionStepRecord", back_populates="execution",
+                                cascade="all, delete-orphan",
+                                order_by="ExecutionStepRecord.step_order")
+
+
+class ExecutionStepRecord(Base):
+    """步骤执行记录 — 每一步一条，含截图和日志"""
+    __tablename__ = "execution_step_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    execution_id = Column(Integer, ForeignKey("execution_records.id"))
+    step_order = Column(Integer, default=0)
+    action_type = Column(String(50), nullable=False)
+    element_name = Column(String(200), default="")
+    element_id = Column(Integer, nullable=True)
+    params_json = Column(Text, default="{}")
+    status = Column(String(20), default="passed")           # passed/failed/error
+    log_message = Column(Text, default="")
+    screenshot_path = Column(String(500), nullable=True)
+    duration = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    execution = relationship("ExecutionRecord", back_populates="step_records")
+
+    @property
+    def params(self):
+        return json.loads(self.params_json) if self.params_json else {}
+
+    @params.setter
+    def params(self, value):
+        self.params_json = json.dumps(value, ensure_ascii=False)

@@ -291,7 +291,19 @@ async def run_testcase(websocket: WebSocket, testcase_id: int, mode: str = "appi
             ]
 
             device_id = device or getattr(project, "device_name", None) or ""
-            await run_steps_via_adb(step_dicts, adb_element_map, websocket, device_id=device_id)
+            await run_steps_via_adb(
+                step_dicts, adb_element_map, websocket,
+                device_id=device_id,
+                capture_replay=True,
+                db_session=db,
+                source_type="testcase",
+                source_id=testcase_id,
+                source_name=tc.name,
+                project_id=tc.project_id,
+                exec_mode="adb",
+                app_package=getattr(project, "app_package", "") or "",
+                app_activity=getattr(project, "app_activity", "") or "",
+            )
         else:
             # ===== Appium 模式（原有逻辑）=====
             scripts = generate_pytest_script(tc, steps, element_map, project=project)

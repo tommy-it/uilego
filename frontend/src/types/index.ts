@@ -161,3 +161,44 @@ export interface BlockNodeData {
   params: StepParams;
   [key: unknown]: unknown;
 }
+
+// ============ 执行记录 ============
+export interface ExecutionRecord {
+  id: number;
+  source_type: 'testcase' | 'page';
+  source_id: number;
+  source_name: string;
+  project_id: number;
+  status: 'running' | 'passed' | 'failed' | 'error' | 'aborted';
+  total_steps: number;
+  passed_count: number;
+  failed_count: number;
+  error_count: number;
+  duration: number;
+  exec_mode: string;
+  device_id: string;
+  created_at: string;
+}
+
+export interface ExecutionStepRecord {
+  id: number;
+  step_order: number;
+  action_type: ActionType;
+  element_name: string;
+  element_id: number | null;
+  params: StepParams;
+  status: 'passed' | 'failed' | 'error';
+  log_message: string;
+  screenshot_url: string | null;
+  duration: number;
+}
+
+export interface ExecutionDetail {
+  record: ExecutionRecord;
+  steps: ExecutionStepRecord[];
+}
+
+export interface ExecutionListResponse {
+  total: number;
+  items: ExecutionRecord[];
+}

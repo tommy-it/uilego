@@ -8,6 +8,8 @@ import type {
   PageStep,
   TestCasePageRef,
   GeneratedScript,
+  ExecutionListResponse,
+  ExecutionDetail,
 } from '../types';
 
 const api = axios.create({
@@ -185,5 +187,17 @@ export const inspectDevice = (projectId: number) =>
 
 export const tapDevice = (projectId: number, x: number, y: number) =>
   api.post(`/device/tap?project_id=${projectId}&x=${x}&y=${y}`);
+
+// ============ Execution Records ============
+export const getExecutions = (projectId: number, page = 1, pageSize = 20) =>
+  api.get<ExecutionListResponse>(
+    `/projects/${projectId}/executions?page=${page}&page_size=${pageSize}`
+  );
+
+export const getExecutionDetail = (executionId: number) =>
+  api.get<ExecutionDetail>(`/executions/${executionId}`);
+
+export const deleteExecution = (executionId: number) =>
+  api.delete(`/executions/${executionId}`);
 
 export default api;

@@ -13,10 +13,11 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button, Select, Space, message, Modal, Form, Input, InputNumber } from 'antd';
-import { SaveOutlined, CodeOutlined, PlusOutlined, DeleteOutlined, ClearOutlined, PlayCircleOutlined, LeftOutlined } from '@ant-design/icons';
+import { SaveOutlined, CodeOutlined, PlusOutlined, DeleteOutlined, ClearOutlined, PlayCircleOutlined, LeftOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useStore } from '../stores/useStore';
 import ActionNode from './ActionNode';
 import ExecutionPanel from './ExecutionPanel';
+import ExecutionHistory from './ExecutionHistory';
 import type { ActionType, StepParams } from '../types';
 import './BlockCanvas.css';
 
@@ -49,12 +50,15 @@ const BlockCanvas: React.FC = () => {
   const [configModal, setConfigModal] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showExecPanel, setShowExecPanel] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [form] = Form.useForm();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // 当前编辑的步骤来源：页面和用例各自独立
   const activeSteps = editMode === 'page' ? currentPageSteps : currentSteps;
   const activeContext = editMode === 'page' ? currentPage : currentTestCase;
+  // 唯一标识：模式+ID 组合，确保从 test case 切换到 page 时一定触发重载
+  const contextKey = activeContext ? `${editMode}-${activeContext.id}` : 'none';
 
   // 切换上下文时，将已保存的步骤加载回画布
   useEffect(() => {
@@ -96,7 +100,7 @@ const BlockCanvas: React.FC = () => {
     if (steps.length > 0) {
       nodeId = Math.max(nodeId, ...steps.map((s) => s.id));
     }
-  }, [activeContext?.id, activeSteps, editMode, elements, setNodes, setEdges]);
+  }, [contextKey, activeSteps, elements, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -292,6 +296,9 @@ const BlockCanvas: React.FC = () => {
           <Button type="primary" icon={<CodeOutlined />} onClick={handleGenerate} loading={loading}>
             生成脚本
           </Button>
+          <Button icon={<HistoryOutlined />} onClick={() => setShowHistory(true)}>
+            历史
+          </Button>
           <Button
             icon={<DeleteOutlined />}
             danger
@@ -435,6 +442,12 @@ const BlockCanvas: React.FC = () => {
           )}
         </Form>
       </Modal>
+
+      {/* 执行历史弹窗 */}
+      <ExecutionHistory
+        visible={showHistory}
+        onClose={() => setShowHistory(false)}
+      />
     </div>
   );
 };

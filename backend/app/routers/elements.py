@@ -168,23 +168,48 @@ async def locate_element(element_id: int, db: Session = Depends(get_db)):
     # 2. 尝试用每个定位器查找
     found = None
     matched_locator = None
-    for loc in locators:
-        lt, lv = loc["type"], loc["value"]
-        if lt == "coordinate":
-            # 坐标定位直接返回
-            from ..services.adb_executor import _parse_coordinate_value
-            try:
-                x, y = _parse_coordinate_value(lv)
-                found = {"center": (x, y), "bounds": None}
-                matched_locator = {"type": "coordinate", "value": lv}
+    scroll_count = 0  # 记录滚动次数
+
+    def try_find(r):
+        for loc in locators:
+            lt, lv = loc["type"], loc["value"]
+            if lt == "coordinate":
+                from ..services.adb_executor import _parse_coordinate_value
+                try:
+                    x, y = _parse_coordinate_value(lv)
+                    return {"center": (x, y), "bounds": None}, {"type": "coordinate", "value": lv}
+                except ValueError:
+                    continue
+            if r:
+                result = adb.find_element(r, lt, lv)
+                if result:
+                    return result, {"type": lt, "value": lv}
+        return None, None
+
+    found, matched_locator = try_find(root)
+
+    # 2.1 没找到时自动滚动查找（最多滚动 4 次）
+    if not found:
+        for i in range(4):
+            await adb.swipe("up", 0.5)  # 内容向下滚
+            await asyncio.sleep(0.8)
+            root = await adb.dump_ui(force=True)
+            found, matched_locator = try_find(root)
+            scroll_count += 1
+            if found:
                 break
-            except ValueError:
-                continue
-        if root:
-            result = adb.find_element(root, lt, lv)
-            if result:
-                found = result
-                matched_locator = {"type": lt, "value": lv}
+
+    # 2.2 向下没找到，回滚再试
+    if not found and scroll_count > 0:
+        for i in range(scroll_count + 3):  # 多滚几次确保回到顶部
+            await adb.swipe("down", 0.5)
+            await asyncio.sleep(0.3)
+        for i in range(3):
+            await adb.swipe("up", 0.5)
+            await asyncio.sleep(0.8)
+            root = await adb.dump_ui(force=True)
+            found, matched_locator = try_find(root)
+            if found:
                 break
 
     # 2.5 查找坐标处的 UI 节点属性（帮助用户确定正确的定位器）
@@ -282,6 +307,7 @@ async def locate_element(element_id: int, db: Session = Depends(get_db)):
             "screen_height": screen_h,
             "node_at_point": node_at_point,
             "nearby_nodes": nearby_nodes,
+            "scrolled_to_find": scroll_count > 0,  # 是否滚动后才找到
         }
     else:
         return {
@@ -289,7 +315,7 @@ async def locate_element(element_id: int, db: Session = Depends(get_db)):
             "locators_tried": locators,
             "screenshot": screenshot_b64,
             "device": device_id or "默认设备",
-            "message": "未在当前屏幕上找到该元素，请确认 App 页面和定位器配置",
+            "message": "已尝试滚动屏幕查找，但未找到该元素。请确认 App 页面和定位器配置",
             "screen_width": screen_w,
             "screen_height": screen_h,
         }

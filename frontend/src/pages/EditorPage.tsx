@@ -414,7 +414,7 @@ const EditorPage: React.FC = () => {
                   if (key.startsWith('page-')) {
                     const pageId = Number(key.split('-')[1]);
                     const page = pages.find((p) => p.id === pageId);
-                    if (page) { selectPage(page); setActiveTab('annotate'); }
+                    if (page) { selectPage(page); }
                   }
                 }}
                 onDrop={onDropPage}

@@ -221,7 +221,19 @@ async def run_page(websocket: WebSocket, page_id: int, mode: str = "adb", device
             ]
 
             device_id = device or getattr(project, "device_name", None) or ""
-            await run_steps_via_adb(step_dicts, adb_element_map, websocket, device_id=device_id)
+            await run_steps_via_adb(
+                step_dicts, adb_element_map, websocket,
+                device_id=device_id,
+                capture_replay=True,
+                db_session=db,
+                source_type="page",
+                source_id=page_id,
+                source_name=page.name,
+                project_id=page.project_id,
+                exec_mode="adb",
+                app_package=getattr(project, "app_package", "") or "",
+                app_activity=getattr(project, "app_activity", "") or "",
+            )
         else:
             await websocket.send_json({"level": "error", "message": "页面级执行仅支持 ADB 直连模式"})
             await websocket.close()

@@ -188,3 +188,43 @@ class TestCasePageOut(BaseModel):
     step_count: int = 0
     class Config:
         from_attributes = True
+
+
+# ============ Execution Records ============
+class ExecutionRecordOut(BaseModel):
+    id: int
+    source_type: str
+    source_id: int
+    source_name: str
+    project_id: Optional[int] = None
+    status: str
+    total_steps: int
+    passed_count: int
+    failed_count: int
+    error_count: int
+    duration: float
+    exec_mode: str
+    device_id: str
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+class ExecutionStepRecordOut(BaseModel):
+    id: int
+    step_order: int
+    action_type: str
+    element_name: str
+    element_id: Optional[int] = None
+    params: dict
+    status: str
+    log_message: str
+    screenshot_url: Optional[str] = None
+    duration: float
+    class Config:
+        from_attributes = True
+
+
+class ExecutionDetailOut(BaseModel):
+    record: ExecutionRecordOut
+    steps: List[ExecutionStepRecordOut]

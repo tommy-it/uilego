@@ -9,8 +9,10 @@ import {
   ClearOutlined,
   ThunderboltOutlined,
   ApiOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { useStore } from '../stores/useStore';
+import ReplayViewer from './ReplayViewer';
 import './ExecutionPanel.css';
 
 const { Text } = Typography;
@@ -49,6 +51,8 @@ const ExecutionPanel: React.FC<Props> = ({ testcaseId }) => {
   const [status, setStatus] = useState<RunStatus>('idle');
   const [result, setResult] = useState<ExecResult | null>(null);
   const [execMode, setExecMode] = useState<string>('adb');
+  const [executionId, setExecutionId] = useState<number | null>(null);
+  const [showReplay, setShowReplay] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const currentProject = useStore((s) => s.currentProject);
@@ -73,6 +77,7 @@ const ExecutionPanel: React.FC<Props> = ({ testcaseId }) => {
   const startRun = () => {
     setLogs([]);
     setResult(null);
+    setExecutionId(null);
     setStatus('running');
 
     const deviceName = currentProject?.device_name || '';
@@ -95,10 +100,13 @@ const ExecutionPanel: React.FC<Props> = ({ testcaseId }) => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.level === 'done') {
-        const res = JSON.parse(data.message) as ExecResult;
+        const res = JSON.parse(data.message) as ExecResult & { execution_id?: number };
         setResult(res);
+        if (res.execution_id) setExecutionId(res.execution_id);
         setStatus(res.return_code === 0 ? 'passed' : 'failed');
         ws.close();
+      } else if (data.level === 'screenshot') {
+        // 截图消息不写入日志，由 ReplayViewer 使用
       } else {
         setLogs((prev) => [...prev, data]);
       }
@@ -193,6 +201,15 @@ const ExecutionPanel: React.FC<Props> = ({ testcaseId }) => {
             strokeColor={result.return_code === 0 ? '#52c41a' : '#ff4d4f'}
             showInfo={false}
           />
+          {executionId && (
+            <button
+              className="exec-ctrl-btn primary"
+              style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              onClick={() => setShowReplay(true)}
+            >
+              <EyeOutlined /> 查看回放
+            </button>
+          )}
         </div>
       )}
 
@@ -214,6 +231,13 @@ const ExecutionPanel: React.FC<Props> = ({ testcaseId }) => {
         )}
         <div ref={logEndRef} />
       </div>
+
+      {/* 回放查看器 */}
+      <ReplayViewer
+        executionId={executionId}
+        visible={showReplay}
+        onClose={() => setShowReplay(false)}
+      />
     </div>
   );
 };
