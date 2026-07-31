@@ -1,0 +1,41 @@
+# Node
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Database
+*.db
+*.sqlite3
+
+# Uploads
+backend/uploads/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Qoder
+.qoder/
+
+# Logs
+*.log
+/tmp/
+
+# Environment
+.env
+.env.local
+
+# Screenshots (too large for GitHub)
+screenshot_*.png

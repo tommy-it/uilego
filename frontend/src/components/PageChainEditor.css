@@ -1,0 +1,102 @@
+.page-chain-editor {
+  padding: 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.page-chain-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.page-chain-desc {
+  margin-bottom: 16px;
+}
+
+.page-chain-empty {
+  padding: 24px;
+  text-align: center;
+}
+
+.page-chain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-chain-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 10px 14px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.page-chain-card:hover {
+  border-color: #1890ff;
+  box-shadow: 0 1px 4px rgba(24, 144, 255, 0.1);
+}
+
+.page-chain-order {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #1890ff;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.page-chain-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-chain-name {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #262626;
+}
+
+.page-chain-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.page-chain-connector {
+  display: none; /* 卡片之间用 gap 代替视觉连接线 */
+}
+
+.page-chain-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.page-chain-card:hover .page-chain-actions {
+  opacity: 1;
+}
+
+.page-chain-footer {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px dashed #e8e8e8;
+  text-align: center;
+}
